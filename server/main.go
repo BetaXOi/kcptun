@@ -15,11 +15,16 @@ import (
 
 	"golang.org/x/crypto/pbkdf2"
 
+	"github.com/armon/go-socks5"
 	"github.com/urfave/cli"
 	kcp "github.com/xtaci/kcp-go"
 	"github.com/xtaci/kcptun/generic"
 	"github.com/xtaci/smux"
 )
+
+const SELFPROXY = "self"
+// socks5 proxy server in self proxy mode
+var s5svr *socks5.Server
 
 // SALT is use for pbkdf2 key expansion
 const SALT = "kcp-go"
@@ -55,6 +60,12 @@ func handleMux(conn io.ReadWriteCloser, config *Config) {
 		if err != nil {
 			log.Println(err)
 			return
+		}
+
+		if config.Target == SELFPROXY {
+			// self proxy socks5 requests
+			go s5svr.ServeConn(stream)
+			continue
 		}
 
 		go func(p1 *smux.Stream) {
@@ -136,8 +147,9 @@ func main() {
 		},
 		cli.StringFlag{
 			Name:  "target, t",
-			Value: "127.0.0.1:12948",
-			Usage: "target server address, or path/to/unix_socket",
+			//Value: "127.0.0.1:12948",
+			Value: SELFPROXY,
+			Usage: "target server address, or path/to/unix_socket. [self] will proxy socks5 requests by itself",
 		},
 		cli.StringFlag{
 			Name:   "key",
@@ -370,6 +382,15 @@ func main() {
 		log.Println("pprof:", config.Pprof)
 		log.Println("quiet:", config.Quiet)
 		log.Println("tcp:", config.TCP)
+
+		if config.Target == SELFPROXY {
+			// socks5 proxy server in self proxy mode
+			conf := &socks5.Config{}
+			s5svr, err = socks5.New(conf)
+			if err != nil {
+				log.Fatal(err)
+			}
+		}
 
 		if err := lis.SetDSCP(config.DSCP); err != nil {
 			log.Println("SetDSCP:", err)
